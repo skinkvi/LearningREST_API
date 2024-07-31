@@ -1,0 +1,12 @@
+env: "local"
+storage:
+  type: "postgres"
+  host: "localhost"
+  port: 5433
+  user: "postgres"
+  database: "urlshortdb"
+  sslmode: "disable"
+http_server:
+  address: "localhost:8080"
+  timeout: 4s # время на  чтение запроса и такое же время на отправку ответа
+  idle_timeout: 60s # время жизни соединения с клиентом
