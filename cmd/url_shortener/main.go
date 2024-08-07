@@ -2,8 +2,12 @@ package main
 
 import (
 	"log/slog"
+	"net/http"
 	"os"
 	"rest_api_app/internal/config"
+	"rest_api_app/internal/handlers/delete"
+	"rest_api_app/internal/handlers/redirect"
+	"rest_api_app/internal/handlers/url/save"
 	"rest_api_app/internal/lib/logger/sl"
 	"rest_api_app/internal/storage/postgres"
 
@@ -41,7 +45,26 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
 
-	// TODO run server
+	router.Post("/url", save.New(log, storage))
+	router.Get("/{alias}", redirect.New(log, storage))
+	router.Post("/delete?alias={alias}", delete.New(log, storage))
+
+	log.Info("server starting", slog.String("on ", cfg.HTTPServer.Address))
+
+	srv := &http.Server{
+		Addr:         cfg.HTTPServer.Address,
+		Handler:      router,
+		ReadTimeout:  cfg.HTTPServer.Timeout,
+		WriteTimeout: cfg.HTTPServer.Timeout,
+		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
+		log.Error("falied to start server")
+	}
+
+	log.Error("server stopped")
+
 }
 
 func setupLogger(env string) *slog.Logger {
