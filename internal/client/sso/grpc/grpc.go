@@ -12,7 +12,7 @@ import (
 )
 
 type Client struct {
-	api ssov1.AuthClient
+	Api ssov1.AuthClient
 	log *slog.Logger
 }
 
@@ -40,7 +40,7 @@ func New(
 	}
 
 	client := &Client{
-		api: ssov1.NewAuthClient(conn),
+		Api: ssov1.NewAuthClient(conn),
 		log: log,
 	}
 

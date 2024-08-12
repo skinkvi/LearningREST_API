@@ -13,3 +13,7 @@ http_server:
   idle_timeout: 60s # время жизни соединения с клиентом
   user: "muser"
   password: "mpassword"
+sso:
+  address: "localhost:11011"
+  timeout: "5s"
+  retriesCount: 3

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
+	"rest_api_app/internal/client/sso/grpc"
 	"rest_api_app/internal/config"
 	"rest_api_app/internal/handlers/delete"
 	"rest_api_app/internal/handlers/redirect"
@@ -14,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	_ "github.com/lib/pq"
+	ssov1 "github.com/skinkvi/protosSTT/gen/go/sso"
 )
 
 const (
@@ -38,6 +41,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Инициализация gRPC клиента для SSO
+	ssoClient, err := grpc.New(context.Background(), log, cfg.SSO.Address, cfg.SSO.Timeout, cfg.SSO.RetriesCount)
+	if err != nil {
+		log.Error("failed to initialize SSO gRPC client", sl.Err(err))
+		os.Exit(1)
+	}
+
 	router := chi.NewRouter()
 
 	router.Use(middleware.RequestID)
@@ -45,14 +55,11 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
 
-	//TODO сделать сюда не обычную авторизацию а нормальную которая у меня уже есть на jwt token
+	// Использование SSO для аутентификации и авторизации
 	router.Route("/url", func(r chi.Router) {
-		r.Use(middleware.BasicAuth("url-shortner", map[string]string{
-			cfg.HTTPServer.User: cfg.HTTPServer.Password,
-		}))
-		// находится тут что бы только зареганный пользователь смог удалять и создавать урлы
+		r.Use(ssoMiddleware(ssoClient, log))
 		r.Post("/", save.New(log, storage))
-		router.Delete("/url/{alias}", delete.New(log, storage))
+		r.Delete("/url/{alias}", delete.New(log, storage))
 	})
 
 	router.Get("/{alias}", redirect.New(log, storage))
@@ -72,7 +79,6 @@ func main() {
 	}
 
 	log.Error("server stopped")
-
 }
 
 func setupLogger(env string) *slog.Logger {
@@ -86,4 +92,33 @@ func setupLogger(env string) *slog.Logger {
 	}
 
 	return log
+}
+
+func ssoMiddleware(ssoClient *grpc.Client, log *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			token := r.Header.Get("Authorization")
+			if token == "" {
+				http.Error(w, "Authorization header is missing", http.StatusUnauthorized)
+				return
+			}
+
+			// Вызов SSO для проверки токена
+			resp, err := ssoClient.Api.ValidateToken(context.Background(), &ssov1.ValidateTokenRequest{Token: token})
+			if err != nil {
+				log.Error("failed to validate token", sl.Err(err))
+				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			if !resp.Valid {
+				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			// TODO: переопределить с типа стринг на собственный тип что бы избежать колизии именно поэтому он и подчеркивает и готовит Warning
+			ctx := context.WithValue(r.Context(), "user", resp.User)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
