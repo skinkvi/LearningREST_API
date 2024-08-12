@@ -45,9 +45,17 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
 
-	router.Post("/url", save.New(log, storage))
+	//TODO сделать сюда не обычную авторизацию а нормальную которая у меня уже есть на jwt token
+	router.Route("/url", func(r chi.Router) {
+		r.Use(middleware.BasicAuth("url-shortner", map[string]string{
+			cfg.HTTPServer.User: cfg.HTTPServer.Password,
+		}))
+		// находится тут что бы только зареганный пользователь смог удалять и создавать урлы
+		r.Post("/", save.New(log, storage))
+		router.Delete("/url/{alias}", delete.New(log, storage))
+	})
+
 	router.Get("/{alias}", redirect.New(log, storage))
-	router.Post("/delete?alias={alias}", delete.New(log, storage))
 
 	log.Info("server starting", slog.String("on ", cfg.HTTPServer.Address))
 
